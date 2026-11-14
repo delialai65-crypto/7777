@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>APEX STRIKE 3D // 絕境突擊 - 旗艦完整版 3D 槍戰與軍火庫</title>
+    <!-- 載入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 載入 Three.js 3D 引擎 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- 載入 Font Awesome 戰術圖示庫 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- 載入科幻電競字體 Orbitron 與 Noto Sans TC -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Orbitron:wght@600;800;900&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Noto Sans TC"', 'sans-serif'],
+                        cyber: ['"Orbitron"', 'sans-serif'],
+                        tech: ['"Rajdhani"', 'sans-serif'],
+                    },
+                    colors: {
+                        space: {
+                            950: '#04060c',
+                            900: '#0a0f1d',
+                            800: '#121a2f',
+                        },
+                        cyber: {
+                            blue: '#00f0ff',
+                            orange: '#ff5e00',
+                            gold: '#ffbe0b',
+                            purple: '#9d00ff'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #04060c;
+            color: #f8fafc;
+            user-select: none;
+            -webkit-user-select: none;
+            font-family: 'Noto Sans TC', sans-serif;
+        }
+
+        #game-canvas {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+            z-index: 1;
+        }
+
+        .carbon-hud {
+            background: linear-gradient(145deg, rgba(14, 21, 38, 0.94), rgba(6, 10, 20, 0.97));
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 240, 255, 0.25);
+        }
+
+        .clip-angled {
+            clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+        }
+
+        /* 受擊紅光邊緣暈影 */
+        #damage-vignette {
+            box-shadow: inset 0 0 95px 38px rgba(255, 30, 50, 0.85);
+            transition: opacity 0.15s ease-out;
+        }
+
+        /* 子彈時間 (Bullet Time) 青藍邊緣特效 */
+        #bullettime-vignette {
+            box-shadow: inset 0 0 110px 45px rgba(0, 240, 255, 0.55);
+            background: radial-gradient(circle, transparent 50%, rgba(0, 180, 255, 0.14) 100%);
+            transition: opacity 0.25s ease;
+        }
+
+        /* 幽靈隱形 (Optical Cloak) 紫光邊緣特效 */
+        #cloak-vignette {
+            box-shadow: inset 0 0 110px 45px rgba(157, 0, 255, 0.55);
+            background: radial-gradient(circle, transparent 55%, rgba(157, 0, 255, 0.14) 100%);
+            transition: opacity 0.25s ease;
+        }
+
+        /* 動態準心線條 */
+        .crosshair-arm {
+            position: absolute;
+            background-color: #00f0ff;
+            box-shadow: 0 0 8px rgba(0, 240, 255, 0.9);
+            transition: transform 0.06s ease-out;
+        }
+
+        /* 3D 翻轉信用卡樣式 */
+        .perspective-1000 { perspective: 1000px; }
+        .preserve-3d { transform-style: preserve-3d; transition: transform 0.6s cubic-bezier(0.4, 0.2, 0.2, 1); }
+        .backface-hidden { backface-visibility: hidden; }
+        .rotate-y-180 { transform: rotateY(180deg); }
+        .card-flipped { transform: rotateY(180deg); }
+    </style>
+</head>
+<body class="overflow-x-hidden">
+
+    <!-- 1. 全螢幕 3D WebGL 遊戲主畫布 -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- 2. 受擊紅光閃爍層 & 幹員終極技能螢幕濾鏡 -->
+    <div id="damage-vignette" class="fixed inset-0 z-10 pointer-events-none opacity-0"></div>
+    <div id="bullettime-vignette" class="fixed inset-0 z-10 pointer-events-none opacity-0"></div>
+    <div id="cloak-vignette" class="fixed inset-0 z-10 pointer-events-none opacity-0"></div>
+
+    <!-- 3. 動態瞄準鏡開鏡遮罩層 (支援紅點、2倍放大鏡、8倍熱成像狙擊鏡) -->
+    <div id="sniper-scope-overlay" class="fixed inset-0 z-10 pointer-events-none hidden flex items-center justify-center">
+        <div id="scope-ring" class="w-[56vmin] h-[56vmin] rounded-full border-2 border-cyber-blue/70 relative flex items-center justify-center shadow-[0_0_40px_rgba(0,240,255,0.3)]">
+            <div class="absolute inset-x-0 h-[1px] bg-cyber-blue/50"></div>
+            <div class="absolute inset-y-0 w-[1px] bg-cyber-blue/50"></div>
+            <div id="scope-center-dot" class="w-2.5 h-2.5 rounded-full bg-cyber-orange shadow-[0_0_10px_#ff5e00]"></div>
+            <div id="scope-label-text" class="absolute bottom-8 font-cyber text-[11px] text-cyber-blue tracking-widest">
+                RAILGUN OPTICS // 4.0X ZOOM
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. 戰鬥中電競 HUD 抬頭顯示器 -->
+    <div id="hud-layer" class="fixed inset-0 z-20 pointer-events-none hidden">
+        
+        <!-- 頂部中央：波次 / 模式進度、剩餘敵人、戰術代幣 CR 與連殺 -->
+        <div class="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-3 sm:gap-5 px-4 sm:px-6 py-2 rounded-xl carbon-hud shadow-lg">
+            <div class="text-center">
+                <div id="hud-mode-label" class="text-[10px] font-cyber text-slate-400 tracking-wider">WAVE</div>
+                <div id="hud-wave" class="font-cyber text-lg sm:text-xl font-black text-cyber-orange">01</div>
+            </div>
+            <div class="h-7 w-[1px] bg-slate-700"></div>
+            <div class="text-center">
+                <div id="hud-enemies-label" class="text-[10px] font-cyber text-slate-400 tracking-wider">HOSTILES</div>
+                <div id="hud-enemies" class="font-cyber text-lg sm:text-xl font-black text-white">05</div>
+            </div>
+            <div class
